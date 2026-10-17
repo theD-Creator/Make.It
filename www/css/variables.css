@@ -1,0 +1,14 @@
+:root {
+  --color-background-primary: #f5f8ff;
+  --color-background-secondary: #ffffff;
+  --color-border-secondary: #d8e1f5;
+  --color-border-tertiary: #e9efff;
+  --color-text-primary: #18223a;
+  --color-text-secondary: #4e5d85;
+  --color-text-tertiary: #8191ba;
+  --color-accent-primary: #1f7afc;
+  --color-accent-danger: #ef4459;
+  --color-accent-soft: #deebff;
+  --color-panel-shadow: 0 8px 30px rgba(16, 35, 74, 0.08);
+  --font-sans: "Segoe UI", "Inter", "Roboto", Arial, sans-serif;
+}

@@ -1,0 +1,8 @@
+{
+  "appId": "com.snapgram.app",
+  "appName": "SnapGram",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,247 @@
+﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnapGram – Prototyp</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="css/variables.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+
+<h2 class="sr-only">SnapGram – vollständiger Prototyp mit Feed, Kamera und DMs</h2>
+
+<div class="phone">
+
+  <!-- AUTH SCREEN -->
+  <div class="screen active" id="screen-auth">
+    <div class="auth-container">
+      <div class="auth-header">
+        <h1>SnapGram</h1>
+        <p>Deine private Social Media</p>
+      </div>
+
+      <!-- Login Form -->
+      <div class="auth-form" id="login-form">
+        <h2>Anmelden</h2>
+        <input type="text" id="login-username" placeholder="Nutzername" />
+        <input type="password" id="login-password" placeholder="Passwort" />
+        <button onclick="handleLogin()">Login</button>
+        <p class="auth-toggle">Noch kein Konto? <span onclick="toggleAuthForm()">Registrieren</span></p>
+      </div>
+
+      <!-- Register Form -->
+      <div class="auth-form hidden" id="register-form">
+        <h2>Registrieren</h2>
+        <input type="text" id="register-firstname" placeholder="Vorname" />
+        <input type="text" id="register-lastname" placeholder="Nachname" />
+        <input type="text" id="register-username" placeholder="Nutzername" />
+        <input type="password" id="register-password" placeholder="Passwort (min. 6 Zeichen)" />
+        <button onclick="handleRegister()">Registrieren</button>
+        <p class="auth-toggle">Schon registriert? <span onclick="toggleAuthForm()">Anmelden</span></p>
+      </div>
+
+      <div class="auth-message" id="auth-message"></div>
+    </div>
+  </div>
+
+  <!-- SEARCH SCREEN -->
+  <div class="screen" id="screen-search">
+    <div class="topbar">
+      <span class="topbar-title">Suche</span>
+    </div>
+    <div class="chat-input-row">
+      <input class="chat-input" id="search-input" placeholder="Nutzername suchen..." oninput="handleUserSearch()" />
+    </div>
+    <div class="dm-list" id="search-results"></div>
+    <nav class="navbar">
+      <button class="nav-btn" onclick="goTo('feed')" title="Home">🏠</button>
+      <button class="nav-btn active" onclick="goTo('search')" title="Suchen">🔍</button>
+      <button class="nav-btn" onclick="goTo('camera')" title="Kamera">📷</button>
+      <button class="nav-btn" onclick="goTo('dms')" title="DMs">💬</button>
+      <button class="nav-btn" onclick="goTo('profile')" title="Profil">👤</button>
+    </nav>
+  </div>
+
+  <!-- FEED SCREEN -->
+  <div class="screen" id="screen-feed">
+    <div class="topbar">
+      <span class="topbar-title">SnapGram</span>
+      <div class="topbar-icons">
+        <i class="ti ti-bell" aria-hidden="true"></i>
+        <i class="ti ti-message-circle" aria-hidden="true" style="cursor:pointer" onclick="goTo('dms')"></i>
+      </div>
+    </div>
+    <div class="stories-row">
+      <div class="story-item">
+        <div class="story-ring seen" style="position:relative;">
+          <div class="avatar">😊</div>
+          <div class="add-btn-badge">+</div>
+        </div>
+        <div class="story-name">Du</div>
+      </div>
+      <div class="story-item" onclick="showSnap('🌅')">
+        <div class="story-ring active"><div class="avatar">🧑‍🎤</div></div>
+        <div class="story-name">alex_g</div>
+      </div>
+      <div class="story-item" onclick="showSnap('🎮')">
+        <div class="story-ring active"><div class="avatar">👩‍💻</div></div>
+        <div class="story-name">sara.m</div>
+      </div>
+      <div class="story-item" onclick="showSnap('🏄')">
+        <div class="story-ring active"><div class="avatar">🏄‍♂️</div></div>
+        <div class="story-name">kai99</div>
+      </div>
+      <div class="story-item" onclick="showSnap('🍕')">
+        <div class="story-ring seen"><div class="avatar">👨‍🍳</div></div>
+        <div class="story-name">foodbro</div>
+      </div>
+    </div>
+    <div class="feed" id="feed"></div>
+    <nav class="navbar">
+      <button class="nav-btn active" onclick="goTo('feed')" title="Home">🏠</button>
+      <button class="nav-btn" onclick="goTo('search')" title="Suchen">🔍</button>
+      <button class="nav-btn" onclick="goTo('camera')" title="Kamera">📷</button>
+      <button class="nav-btn" onclick="goTo('dms')" title="DMs">💬</button>
+      <button class="nav-btn" onclick="goTo('profile')" title="Profil">👤</button>
+    </nav>
+  </div>
+
+  <!-- CAMERA SCREEN -->
+  <div class="screen" id="screen-camera">
+    <div class="camera-topbar">
+      <i class="ti ti-x" onclick="goTo('feed')" aria-label="Schließen"></i>
+      <i class="ti ti-bolt" aria-hidden="true"></i>
+      <i class="ti ti-rotate" aria-hidden="true"></i>
+    </div>
+    <div class="camera-viewfinder" id="viewfinder">
+      <div class="camera-emoji-bg">📷</div>
+      <div class="camera-preview" id="cam-preview">😊</div>
+      <video class="camera-live-video" id="cam-live-video" autoplay playsinline muted></video>
+      <img class="camera-preview-image" id="cam-preview-image" alt="Bildvorschau" />
+      <div class="camera-filter-label" id="filter-label">Kein Filter</div>
+      <div class="snap-taken" id="snap-taken">
+        <div class="snap-taken-emoji" id="snap-taken-emoji">😊</div>
+        <img class="snap-taken-image" id="snap-taken-image" alt="Aufgenommenes Bild" />
+        <div style="color:white;font-size:13px;opacity:0.8">Snap aufgenommen!</div>
+        <div class="snap-action-btns">
+          <div class="snap-action-btn" onclick="hideTaken()">Verwerfen</div>
+          <div class="snap-action-btn" style="background:#3897f0;border-color:#3897f0;" onclick="sendSnap()">Senden</div>
+        </div>
+      </div>
+    </div>
+    <div class="filters-row" id="filters-row"></div>
+    <div class="camera-controls">
+      <div class="cam-btn-side" onclick="openImagePicker()" aria-label="Bild ausw�hlen"><i class="ti ti-photo" aria-hidden="true"></i></div>
+      <div class="cam-btn-shutter" onclick="takeSnap()" aria-label="Foto aufnehmen">📸</div>
+      <div class="cam-btn-side" aria-label="Timer"><i class="ti ti-clock" aria-hidden="true" style="color:white"></i></div>
+    </div>
+    <input type="file" id="image-picker" accept="image/*" style="display:none" onchange="onImageSelected(event)" />
+    <nav class="navbar">
+      <button class="nav-btn" onclick="goTo('feed')" title="Home">🏠</button>
+      <button class="nav-btn" onclick="goTo('search')" title="Suchen">🔍</button>
+      <button class="nav-btn active" onclick="goTo('camera')" title="Kamera">📷</button>
+      <button class="nav-btn" onclick="goTo('dms')" title="DMs">💬</button>
+      <button class="nav-btn" onclick="goTo('profile')" title="Profil">👤</button>
+    </nav>
+  </div>
+
+  <!-- DM LIST SCREEN -->
+  <div class="screen" id="screen-dms">
+    <div class="topbar">
+      <i class="ti ti-arrow-left topbar-back" onclick="goTo('feed')" aria-label="Zurück"></i>
+      <span class="topbar-title">Nachrichten</span>
+      <div class="topbar-icons"><i class="ti ti-edit" aria-hidden="true"></i></div>
+    </div>
+    <div class="dm-list" id="dm-list"></div>
+    <nav class="navbar">
+      <button class="nav-btn" onclick="goTo('feed')" title="Home">🏠</button>
+      <button class="nav-btn" onclick="goTo('search')" title="Suchen">🔍</button>
+      <button class="nav-btn" onclick="goTo('camera')" title="Kamera">📷</button>
+      <button class="nav-btn active" onclick="goTo('dms')" title="DMs">💬</button>
+      <button class="nav-btn" onclick="goTo('profile')" title="Profil">👤</button>
+    </nav>
+  </div>
+
+  <!-- CHAT SCREEN -->
+  <div class="screen" id="screen-chat">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button onclick="goTo('dms')" aria-label="Zurück" style="border:none;background:transparent;font-size:14px;color:var(--color-text-secondary);cursor:pointer;padding:0 4px;">← Zurück</button>
+        <div id="chat-avatar" style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;"></div>
+        <span id="chat-name" style="font-size:15px;font-weight:500;"></span>
+      </div>
+      <div class="topbar-icons"><i class="ti ti-video" aria-hidden="true"></i></div>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div class="chat-input-row">
+      <i class="ti ti-camera chat-cam" onclick="goTo('camera')" aria-label="Snap senden"></i>
+      <input class="chat-input" id="chat-input" placeholder="Nachricht..." onkeydown="sendMsg(event)" />
+      <i class="ti ti-send chat-send" onclick="sendMsgClick()" aria-label="Senden"></i>
+    </div>
+  </div>
+
+  <!-- PROFILE SCREEN -->
+  <div class="screen" id="screen-profile">
+    <div class="topbar">
+      <i class="ti ti-x" onclick="goTo('feed')" aria-label="Schließen"></i>
+      <span class="topbar-title">Profil</span>
+      <button onclick="toggleSettingsMenu(true)" aria-label="Einstellungen" style="border:none;background:transparent;cursor:pointer;font-size:18px;color:var(--color-text-secondary);">⚙</button>
+    </div>
+    <div class="profile-header">
+      <div class="profile-avatar-lg">😊</div>
+      <div class="profile-name" id="profile-name">Dein Name</div>
+      <div class="profile-username" id="profile-username">@deinusername</div>
+      <div class="profile-bio">Snapgram Enthusiast 📸✨ Living my best life</div>
+      <div class="profile-stats">
+        <div class="profile-stat">
+          <div class="profile-stat-value" id="profile-posts-count">0</div>
+          <div class="profile-stat-label">Posts</div>
+        </div>
+        <div class="profile-stat">
+          <div class="profile-stat-value" id="profile-followers-count">0</div>
+          <div class="profile-stat-label">Follower</div>
+        </div>
+        <div class="profile-stat">
+          <div class="profile-stat-value" id="profile-following-count">0</div>
+          <div class="profile-stat-label">Folge</div>
+        </div>
+      </div>
+    </div>
+    <div class="profile-buttons">
+      <button class="profile-btn primary">Ändern</button>
+      <button class="profile-btn">Teilen</button>
+    </div>
+    <div class="profile-grid" id="profile-grid"></div>
+    <nav class="navbar">
+      <button class="nav-btn" onclick="goTo('feed')" title="Home">🏠</button>
+      <button class="nav-btn" onclick="goTo('search')" title="Suchen">🔍</button>
+      <button class="nav-btn" onclick="goTo('camera')" title="Kamera">📷</button>
+      <button class="nav-btn" onclick="goTo('dms')" title="DMs">💬</button>
+      <button class="nav-btn active" onclick="goTo('profile')" title="Profil">👤</button>
+    </nav>
+  </div>
+
+  <!-- Snap Overlay -->
+  <div class="snap-overlay" id="snapOverlay" onclick="hideSnap()">
+    <div class="snap-overlay-emoji" id="snapEmoji">🌅</div>
+    <div class="snap-timer">⏱ Verschwindet in 24h · Tippen zum Schließen</div>
+  </div>
+
+  <div class="snap-overlay" id="settingsOverlay" onclick="toggleSettingsMenu(false)">
+    <div style="background:white;width:86%;border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;" onclick="event.stopPropagation()">
+      <button class="profile-btn" onclick="handleLogout()">Abmelden</button>
+      <button class="profile-btn" style="color:#ff3b30;border-color:#ff3b30;" onclick="handleDeleteAccount()">Konto löschen</button>
+      <button class="profile-btn" onclick="toggleSettingsMenu(false)">Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/script.js"></script>
+</body>
+</html>
+
