@@ -1,20 +1,42 @@
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 
-const json = (body: Record<string, unknown>, status = 200) =>
+const allowedOrigins = new Set([
+  "https://thed-creator.github.io",
+  "capacitor://localhost",
+  "https://localhost",
+]);
+
+const corsHeaders = (request: Request): HeadersInit => {
+  const origin = request.headers.get("Origin") || "";
+  const localOrigin = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const allowedOrigin = allowedOrigins.has(origin) || localOrigin;
+  return {
+    ...(allowedOrigin ? { "Access-Control-Allow-Origin": origin } : {}),
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Cache-Control": "no-store",
+    "Vary": "Origin",
+  };
+};
+
+const json = (request: Request, body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: { ...corsHeaders(request), "Content-Type": "application/json" },
   });
 
 Deno.serve(async (request: Request) => {
-  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  if (request.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders(request) });
+  }
+  if (request.method !== "POST") return json(request, { error: "Method not allowed" }, 405);
 
   const authorization = request.headers.get("Authorization");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!authorization?.startsWith("Bearer ") || !supabaseUrl || !anonKey || !serviceKey) {
-    return json({ error: "Unauthorized" }, 401);
+    return json(request, { error: "Unauthorized" }, 401);
   }
 
   const userClient = createClient(supabaseUrl, anonKey, {
@@ -22,7 +44,7 @@ Deno.serve(async (request: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: authData, error: authError } = await userClient.auth.getUser();
-  if (authError || !authData.user) return json({ error: "Unauthorized" }, 401);
+  if (authError || !authData.user) return json(request, { error: "Unauthorized" }, 401);
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -71,9 +93,9 @@ Deno.serve(async (request: Request) => {
 
     const { error: deleteUserError } = await admin.auth.admin.deleteUser(authUserId);
     if (deleteUserError) throw deleteUserError;
-    return json({ success: true });
+    return json(request, { success: true });
   } catch (error) {
     console.error("Account deletion failed", error);
-    return json({ error: "Account deletion failed" }, 500);
+    return json(request, { error: "Account deletion failed" }, 500);
   }
 });
