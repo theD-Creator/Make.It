@@ -1,190 +1,195 @@
 const SUPABASE_URL = 'https://iymxywnwxjziewjnfgto.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml5bXh5d253eGp6aWV3am5mZ3RvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkyMDI0NjgsImV4cCI6MjA5NDc3ODQ2OH0.aHxFP6VDOIejqCaun8-dGVZa7aQ7cwvQme9wDIZled4';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_l1oQDv-PGUN2ZiJA4KGzcQ_gEWPxJQV';
 
 let client = null;
-const SESSION_KEY = 'snapgram_session';
 
 function initSupabase() {
-  if (!window.supabase) return false;
-  const { createClient } = window.supabase;
-  client = createClient(SUPABASE_URL, SUPABASE_KEY);
+  if (!window.supabase?.createClient) return false;
+  client = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
   return true;
 }
 
-async function hashPassword(password, username) {
-  const source = `${username}::${password}`;
-  const bytes = new TextEncoder().encode(source);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(hashBuffer)).map(x => x.toString(16).padStart(2, '0')).join('');
+function profileFromRow(row) {
+  if (!row) return null;
+  const { auth_user_id: authUserId, ...profile } = row;
+  return { ...profile, authUserId };
 }
 
-function saveSession(user) {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({
-    id: user.id,
-    username: user.username,
-    name: user.name || ''
-  }));
+async function getProfileForAuthUser(authUser) {
+  if (!client || !authUser?.id) return null;
+  const { data, error } = await client
+    .from('users')
+    .select('id, username, name, bio, avatar_url, auth_user_id')
+    .eq('auth_user_id', authUser.id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return profileFromRow(data);
 }
 
-function clearSession() {
-  localStorage.removeItem(SESSION_KEY);
-}
+async function signUp(email, password, username, name) {
+  if (!client) return { success: false, error: 'Keine Supabase-Verbindung.' };
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanUsername = username.trim().toLowerCase();
 
-async function signUp(username, password, name) {
-  if (!client) return { success: false, error: 'Keine Supabase-Verbindung' };
   try {
-    const cleanUsername = username.trim().toLowerCase();
-    const passwordHash = await hashPassword(password, cleanUsername);
-
-    const { data: existing, error: existingError } = await client
+    const { data: existing, error: lookupError } = await client
       .from('users')
       .select('id')
       .eq('username', cleanUsername)
       .maybeSingle();
+    if (lookupError) return { success: false, error: lookupError.message };
+    if (existing) return { success: false, error: 'Dieser Nutzername ist bereits vergeben.' };
 
-    if (existingError) return { success: false, error: existingError.message };
-    if (existing) return { success: false, error: 'Nutzername ist schon vergeben' };
-
-    const { data, error } = await client
-      .from('users')
-      .insert([{
-        username: cleanUsername,
-        name,
-        avatar_url: '😊',
-        password_hash: passwordHash
-      }])
-      .select('id, username, name')
-      .single();
+    const { data, error } = await client.auth.signUp({
+      email: cleanEmail,
+      password,
+      options: {
+        data: { username: cleanUsername, full_name: name.trim() },
+        emailRedirectTo: window.location.href.split('#')[0]
+      }
+    });
 
     if (error) return { success: false, error: error.message };
-    saveSession(data);
-    return { success: true, user: data };
-  } catch (err) {
-    return { success: false, error: err.message };
+    if (!data.session) {
+      return {
+        success: true,
+        needsEmailConfirmation: true,
+        user: null
+      };
+    }
+
+    const profile = await getProfileForAuthUser(data.user);
+    if (!profile) {
+      await client.auth.signOut();
+      return { success: false, error: 'Das Profil konnte nicht angelegt werden. Bitte versuche es später erneut.' };
+    }
+    return { success: true, user: profile };
+  } catch (error) {
+    return { success: false, error: error?.message || 'Registrierung fehlgeschlagen.' };
   }
 }
 
-async function signIn(username, password) {
-  if (!client) return { success: false, error: 'Keine Supabase-Verbindung' };
+async function signIn(email, password) {
+  if (!client) return { success: false, error: 'Keine Supabase-Verbindung.' };
   try {
-    const cleanUsername = username.trim().toLowerCase();
-    const passwordHash = await hashPassword(password, cleanUsername);
-
-    const { data, error } = await client
-      .from('users')
-      .select('id, username, name, password_hash')
-      .eq('username', cleanUsername)
-      .maybeSingle();
-
+    const { data, error } = await client.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password
+    });
     if (error) return { success: false, error: error.message };
-    if (!data || data.password_hash !== passwordHash) {
-      return { success: false, error: 'Nutzername oder Passwort falsch' };
+    const profile = await getProfileForAuthUser(data.user);
+    if (!profile) {
+      await client.auth.signOut();
+      return { success: false, error: 'Dein Nutzerprofil fehlt. Bitte registriere dich erneut oder kontaktiere den Betreiber.' };
     }
-
-    const user = { id: data.id, username: data.username, name: data.name || '' };
-    saveSession(user);
-    return { success: true, user };
-  } catch (err) {
-    return { success: false, error: err.message };
+    return { success: true, user: profile };
+  } catch (error) {
+    return { success: false, error: error?.message || 'Anmeldung fehlgeschlagen.' };
   }
 }
 
 async function signOut() {
-  clearSession();
-  return true;
+  if (!client) return true;
+  const { error } = await client.auth.signOut();
+  return !error;
 }
 
 async function getCurrentUser() {
   if (!client) return null;
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const session = JSON.parse(raw);
-    if (!session?.id) return null;
-
-    const { data, error } = await client
-      .from('users')
-      .select('id, username, name')
-      .eq('id', session.id)
-      .maybeSingle();
-
-    if (error || !data) {
-      clearSession();
-      return null;
-    }
-    return data;
+    const { data, error } = await client.auth.getUser();
+    if (error || !data.user) return null;
+    return await getProfileForAuthUser(data.user);
   } catch {
-    clearSession();
     return null;
   }
 }
 
 async function getUserProfile(userId) {
   if (!client) return null;
-  const { data, error } = await client.from('users').select('*').eq('id', userId).single();
-  if (error) return null;
-  return data;
+  const { data, error } = await client
+    .from('users')
+    .select('id, username, name, bio, avatar_url, followers_count, following_count, created_at')
+    .eq('id', userId)
+    .maybeSingle();
+  return error ? null : data;
 }
 
 async function updateUserProfile(userId, updates) {
   if (!client) return false;
-  const { error } = await client.from('users').update(updates).eq('id', userId);
+  const safeUpdates = {};
+  for (const field of ['username', 'name', 'bio', 'avatar_url']) {
+    if (Object.hasOwn(updates || {}, field)) safeUpdates[field] = updates[field];
+  }
+  const { error } = await client.from('users').update(safeUpdates).eq('id', userId);
   return !error;
 }
 
 async function getUserPosts(userId) {
   if (!client) return [];
-  const { data, error } = await client.from('posts').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-  if (error) return [];
-  return data || [];
+  const { data, error } = await client
+    .from('posts')
+    .select('id, user_id, caption, image_url, emoji, likes_count, comments_count, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  return error ? [] : (data || []);
 }
 
-function decodeBase64(base64) {
-  const binary = atob(base64);
+function decodeDataUrl(dataUrl) {
+  const match = /^data:([^;,]+);base64,([\s\S]+)$/.exec(dataUrl || '');
+  if (!match) throw new Error('Das Bildformat ist ungültig.');
+  const binary = atob(match[2]);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return { bytes, mimeType: match[1] };
 }
 
-async function createPost(userId, caption, emoji) {
+async function createPost(userId, caption, emoji, imageDataUrl, fileName, authUserId) {
   if (!client) return null;
   let imageUrl = null;
+  let imagePath = null;
+
   try {
-    if (arguments[3]) {
-      const rawDataUrl = arguments[3];
-      const mimeMatch = rawDataUrl.match(/^data:(.*?);base64,/);
-      const mimeType = mimeMatch?.[1] || 'image/jpeg';
-      const base64Data = rawDataUrl.split(',')[1];
-      const fileName = arguments[4] || `snap-${Date.now()}.jpg`;
-      const imagePath = `${userId}/${Date.now()}-${fileName.replace(/\s+/g, '-')}`;
+    if (imageDataUrl) {
+      if (!authUserId) throw new Error('Supabase-Sitzung fehlt.');
+      const { bytes, mimeType } = decodeDataUrl(imageDataUrl);
+      const safeName = String(fileName || 'snap.jpg').replace(/[^a-zA-Z0-9._-]/g, '-');
+      imagePath = `${authUserId}/${Date.now()}-${safeName}`;
       const { error: uploadError } = await client.storage
         .from('snapgram-images')
-        .upload(imagePath, decodeBase64(base64Data), { upsert: true, contentType: mimeType });
-      if (!uploadError) {
-        const { data: urlData } = client.storage.from('snapgram-images').getPublicUrl(imagePath);
-        imageUrl = urlData.publicUrl;
-      } else {
-        imageUrl = rawDataUrl;
-      }
+        .upload(imagePath, bytes, { upsert: false, contentType: mimeType });
+      if (uploadError) throw uploadError;
+      imageUrl = client.storage.from('snapgram-images').getPublicUrl(imagePath).data.publicUrl;
     }
-    const { data, error } = await client.from('posts').insert([{ user_id: userId, caption, emoji, image_url: imageUrl }]);
-    if (error) return null;
+
+    const { data, error } = await client
+      .from('posts')
+      .insert({ user_id: userId, caption, emoji, image_url: imageUrl })
+      .select('id, user_id, caption, image_url, emoji, created_at')
+      .single();
+    if (error) throw error;
     return data;
-  } catch {
+  } catch (error) {
+    if (imagePath) await client.storage.from('snapgram-images').remove([imagePath]).catch(() => {});
+    console.error('Supabase post creation failed:', error);
     return null;
   }
 }
 
 async function getFollowers(userId) {
   if (!client) return 0;
-  const { count, error } = await client.from('followers').select('*', { count: 'exact' }).eq('user_id', userId);
-  if (error) return 0;
-  return count || 0;
+  const { count, error } = await client
+    .from('followers')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId);
+  return error ? 0 : (count || 0);
 }
 
 async function followUser(userId, targetUserId) {
   if (!client) return false;
-  const { error } = await client.from('followers').insert([{ user_id: targetUserId, follower_id: userId }]);
+  const { error } = await client
+    .from('followers')
+    .insert({ user_id: targetUserId, follower_id: userId });
   return !error;
 }
 
@@ -193,7 +198,61 @@ function extractStoragePathFromUrl(url) {
   const marker = '/storage/v1/object/public/snapgram-images/';
   const idx = url.indexOf(marker);
   if (idx === -1) return null;
-  return decodeURIComponent(url.substring(idx + marker.length));
+  try {
+    return decodeURIComponent(url.substring(idx + marker.length));
+  } catch {
+    return url.substring(idx + marker.length);
+  }
+}
+
+async function deletePostAndImage(postId, imageUrl) {
+  if (!client) return false;
+  try {
+    const storagePath = extractStoragePathFromUrl(imageUrl);
+    if (storagePath) {
+      const { error: imageError } = await client.storage.from('snapgram-images').remove([storagePath]);
+      if (imageError) return false;
+    }
+    const { error } = await client.from('posts').delete().eq('id', postId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+async function getConversation(userId, otherUserId) {
+  if (!client) return { success: false, messages: [] };
+  try {
+    const filter = `and(sender_id.eq.${userId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${userId})`;
+    const { data, error } = await client
+      .from('messages')
+      .select('id, sender_id, recipient_id, text, created_at')
+      .or(filter)
+      .order('created_at', { ascending: true })
+      .limit(200);
+    if (error) return { success: false, messages: [] };
+    return { success: true, messages: data || [] };
+  } catch {
+    return { success: false, messages: [] };
+  }
+}
+
+async function sendMessage(senderId, recipientId, text) {
+  if (!client) return { success: false };
+  const { data, error } = await client
+    .from('messages')
+    .insert({ sender_id: senderId, recipient_id: recipientId, text: String(text).trim() })
+    .select('id, sender_id, recipient_id, text, created_at')
+    .single();
+  return { success: !error, message: data || null, error: error?.message };
+}
+
+async function deleteAccountAndData() {
+  if (!client) return false;
+  const { error } = await client.functions.invoke('delete-account', { method: 'POST' });
+  if (error) return false;
+  await client.auth.signOut();
+  return true;
 }
 
 async function searchUsers(query) {
@@ -205,50 +264,7 @@ async function searchUsers(query) {
     .select('id, username, name, avatar_url')
     .ilike('username', `%${term}%`)
     .limit(20);
-  if (error) return [];
-  return data || [];
-}
-
-async function deletePostAndImage(postId, imageUrl) {
-  if (!client) return false;
-  try {
-    const storagePath = extractStoragePathFromUrl(imageUrl);
-    if (storagePath) {
-      await client.storage.from('snapgram-images').remove([storagePath]);
-    }
-    const { error } = await client.from('posts').delete().eq('id', postId);
-    return !error;
-  } catch {
-    return false;
-  }
-}
-
-async function deleteAccountAndData(userId) {
-  if (!client) return false;
-  try {
-    const { data: posts } = await client.from('posts').select('id, image_url').eq('user_id', userId);
-    const storagePaths = (posts || [])
-      .map(p => extractStoragePathFromUrl(p.image_url))
-      .filter(Boolean);
-    if (storagePaths.length) {
-      await client.storage.from('snapgram-images').remove(storagePaths);
-    }
-    await client.from('posts').delete().eq('user_id', userId);
-    await client.from('followers').delete().eq('user_id', userId);
-    await client.from('followers').delete().eq('follower_id', userId);
-    await client.from('messages').delete().eq('sender_id', userId);
-    const { error } = await client.from('users').delete().eq('id', userId);
-    clearSession();
-    return !error;
-  } catch {
-    try {
-      const { error } = await client.from('users').delete().eq('id', userId);
-      clearSession();
-      return !error;
-    } catch {
-      return false;
-    }
-  }
+  return error ? [] : (data || []);
 }
 
 window.supabaseDB = {
@@ -263,6 +279,8 @@ window.supabaseDB = {
   searchUsers,
   deletePostAndImage,
   deleteAccountAndData,
+  getConversation,
+  sendMessage,
   getFollowers,
   followUser,
   isConnected: () => client !== null
