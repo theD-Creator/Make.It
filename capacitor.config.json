@@ -1,6 +1,6 @@
 {
   "appId": "com.snapgram.app",
-  "appName": "SnapGram",
+  "appName": "Make.It.",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
