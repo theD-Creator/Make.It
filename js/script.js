@@ -564,6 +564,9 @@ function sendMsgClick() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const splash = document.getElementById('app-splash');
+  window.setTimeout(() => splash?.classList.add('is-hidden'), 1500);
+  window.setTimeout(() => splash?.remove(), 1900);
   initFilters();
   document.getElementById('filters-row').style.display = 'none';
   loadProfile();
