@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SnapGram – Prototyp</title>
+  <title>Make.It. – dein privates Netzwerk</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/tabler-icons.min.css">
   <link rel="stylesheet" href="css/variables.css">
   <link rel="stylesheet" href="css/styles.css">
@@ -11,7 +11,11 @@
 </head>
 <body>
 
-<h2 class="sr-only">SnapGram – vollständiger Prototyp mit Feed, Kamera und DMs</h2>
+<div class="app-splash" id="app-splash" role="status" aria-label="Make.It. wird geladen">
+  <span class="splash-logo">Make.It.</span>
+</div>
+
+<h2 class="sr-only">Make.It. – dein privates Netzwerk mit Feed, Kamera und Nachrichten</h2>
 
 <div class="phone">
 
@@ -19,7 +23,7 @@
   <div class="screen active" id="screen-auth">
     <div class="auth-container">
       <div class="auth-header">
-        <h1>SnapGram</h1>
+        <h1>Make.It.</h1>
         <p>Deine private Social Media</p>
       </div>
 
@@ -68,7 +72,7 @@
   <!-- FEED SCREEN -->
   <div class="screen" id="screen-feed">
     <div class="topbar">
-      <span class="topbar-title">SnapGram</span>
+      <span class="topbar-title">Make.It.</span>
       <div class="topbar-icons">
         <i class="ti ti-bell" aria-hidden="true"></i>
         <i class="ti ti-message-circle" aria-hidden="true" style="cursor:pointer" onclick="goTo('dms')"></i>
@@ -194,7 +198,7 @@
       <div class="profile-avatar-lg">😊</div>
       <div class="profile-name" id="profile-name">Dein Name</div>
       <div class="profile-username" id="profile-username">@deinusername</div>
-      <div class="profile-bio">Snapgram Enthusiast 📸✨ Living my best life</div>
+      <div class="profile-bio">Dein privates Netzwerk 📸✨</div>
       <div class="profile-stats">
         <div class="profile-stat">
           <div class="profile-stat-value" id="profile-posts-count">0</div>
