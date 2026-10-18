@@ -1,4 +1,4 @@
-name: Deploy web app to GitHub Pages
+name: Deploy Make.It. to GitHub Pages
 
 on:
   push:
