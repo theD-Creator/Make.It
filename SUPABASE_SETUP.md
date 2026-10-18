@@ -1,77 +1,32 @@
-# Supabase Integration für SnapGram
+# Supabase für Make.It.
 
-## Schritt 1: Projekt
-1. Auf [supabase.com](https://supabase.com) ein Projekt erstellen.
-2. Projektname z. B. `snapgram`.
+Die App verwendet Supabase Auth, Postgres und Storage. Im Browser wird ausschließlich die öffentliche Publishable Key genutzt. Ein Secret- oder Service-Role-Key gehört nie in das Frontend.
 
-## Schritt 2: Tabellen
-Im SQL Editor ausführen:
+## Verbundenes Projekt
 
-```sql
-create table if not exists public.users (
-  id uuid primary key default gen_random_uuid(),
-  username varchar unique not null,
-  name varchar,
-  password_hash text not null,
-  bio text,
-  avatar_url varchar,
-  followers_count int default 0,
-  following_count int default 0,
-  created_at timestamp default now()
-);
+- Projekt: `snapgram`
+- Ref: `iymxywnwxjziewjnfgto`
+- Projekt-URL: `https://iymxywnwxjziewjnfgto.supabase.co`
+- Frontend-Key: `sb_publishable_…` (liegt in `js/supabase.js` und ist für Browser-Apps vorgesehen)
 
-create table if not exists public.posts (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.users(id),
-  caption text,
-  image_url varchar,
-  emoji varchar,
-  likes_count int default 0,
-  comments_count int default 0,
-  created_at timestamp default now()
-);
+## Datenbank
 
-create table if not exists public.followers (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references public.users(id),
-  follower_id uuid not null references public.users(id),
-  created_at timestamp default now(),
-  unique(user_id, follower_id)
-);
+Die Einrichtung ist bereits auf das verbundene Supabase-Projekt angewendet. Das Skript `supabase_policies.sql` dokumentiert Tabellen, Auth-Trigger, RLS-Regeln und den Bild-Bucket. Öffentliche Rollen dürfen Profile und Posts lesen; Änderungen erfordern eine Supabase-Auth-Sitzung und sind auf das eigene Profil beschränkt. Nachrichten sind nur für Sender und Empfänger sichtbar.
 
-create table if not exists public.messages (
-  id uuid primary key default gen_random_uuid(),
-  conversation_id uuid,
-  sender_id uuid not null references public.users(id),
-  text text not null,
-  created_at timestamp default now()
-);
-```
+## Anmeldung
 
-Falls `users` schon existiert:
-```sql
-alter table public.users add column if not exists password_hash text;
-```
+Die Registrierung benötigt jetzt Vorname, Nachname, Nutzername, E-Mail-Adresse und Passwort. Supabase Auth verwaltet Passwörter und Sitzungen. Bei aktivierter E-Mail-Bestätigung muss der Bestätigungslink zur Web-App zurückführen.
 
-## Schritt 3: API Keys
-Unter `Settings -> API`:
-- `Project URL`
-- `anon public key`
+Für GitHub Pages in Supabase unter **Authentication → URL Configuration** als Redirect URL eintragen:
 
-In `D:\Snapgram\js\supabase.js` eintragen.
+`https://thed-creator.github.io/Make.It/`
 
-## Schritt 4: Auth-Modell
-Diese App nutzt aktuell nur **Username + Passwort** über die Tabelle `users` (ohne Supabase E-Mail-Auth im Frontend).
+Wenn E-Mail-Bestätigungen für alle Nutzer versendet werden sollen, in Supabase einen eigenen SMTP-Anbieter einrichten. Supabases Standard-Mailversand ist für produktive öffentliche Registrierungen begrenzt.
 
-## Schritt 5: RLS + Storage
-Im SQL Editor den Inhalt von `D:\Snapgram\supabase_policies.sql` ausführen.
+## Alte Konten
 
-Das erstellt:
-- RLS-Policies für `users`, `posts`, `followers`, `messages`
-- Storage-Bucket `snapgram-images`
-- Storage-Policies für Bild-Upload/Lesen
+Vier ältere Profile und drei Posts waren bereits vorhanden und bleiben erhalten. Die alten Konten nutzten ein eigenes Passwort-Hash-Verfahren ohne Supabase Auth. Diese Passwörter werden nicht weiter zur Anmeldung verwendet. Neue Konten benötigen einen noch freien Nutzernamen; bestehende öffentliche Profile und Posts bleiben sichtbar.
 
-## Ehrlich wichtig
-- Mit dem aktuellen Modell (ohne Supabase JWT pro User) sind nur offene Policies möglich.
-- Das ist funktional, aber nicht wirklich sicher.
-- Für echte Sicherheit sollte als Nächstes auf Supabase Auth mit Session/JWT umgestellt werden.
+## Bild- und Kontolöschung
+
+Bilder werden im öffentlichen Bucket `snapgram-images` gespeichert. Uploads und Änderungen sind auf den eigenen Auth-Ordner beschränkt. Die Edge Function `delete-account` löscht auf ausdrückliche Nutzeraktion die zugehörigen Bilder, Posts, Nachrichten, Follower und das Auth-Konto.
