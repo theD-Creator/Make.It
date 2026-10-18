@@ -8,10 +8,11 @@
 ];
 let currentFilter = 0;
 let currentUser = null;
+let activeChatUserId = null;
 let selectedImageDataUrl = null;
 let selectedImageFile = null;
 let cameraStream = null;
-const LOCAL_POSTS_KEY = 'snapgram_local_posts';
+const LOCAL_POSTS_KEY = 'makeit_local_posts';
 const LOCAL_DM_KEY = 'snapgram_dms';
 
 function initFilters() {
@@ -118,21 +119,31 @@ function hideTaken() {
 }
 
 async function sendSnap() {
+  if (!currentUser) return showAuthMessage('Bitte melde dich zuerst an.', true);
   const caption = selectedImageDataUrl ? 'Neuer Bild-Snap' : `Neuer Snap mit ${filters[currentFilter].name}`;
-  const username = localStorage.getItem('snapgram_username') || 'du';
-  const localPost = {
-    id: `local-${Date.now()}`,
+  const post = await supabaseDB.createPost(
+    currentUser.id,
     caption,
-    emoji: filters[currentFilter].emoji,
-    image_url: selectedImageDataUrl || null,
-    username,
+    filters[currentFilter].emoji,
+    selectedImageDataUrl,
+    selectedImageFile?.name,
+    currentUser.authUserId
+  );
+  if (!post) {
+    alert('Der Snap konnte nicht gespeichert werden. Prüfe deine Verbindung und versuche es erneut.');
+    return;
+  }
+
+  const localPost = {
+    id: post.id,
+    caption: post.caption,
+    emoji: post.emoji,
+    image_url: post.image_url,
+    username: currentUser.username,
     timeLabel: 'gerade eben'
   };
-  if (currentUser) {
-    await supabaseDB.createPost(currentUser.id, caption, filters[currentFilter].emoji, selectedImageDataUrl, selectedImageFile?.name);
-  }
   saveLocalPost(localPost);
-  prependFeedPost(caption, selectedImageDataUrl, filters[currentFilter].emoji);
+  prependFeedPost(caption, post.image_url, filters[currentFilter].emoji);
   renderProfileFromPosts();
   hideTaken();
   resetImageMode();
@@ -165,6 +176,7 @@ function prependFeedPost(caption, imageUrl, emoji) {
 function renderPost(postData) {
   const post = document.createElement('div');
   post.className = 'post';
+  post.dataset.ownPost = 'true';
   const content = postData.image_url
     ? `<img src="${postData.image_url}" alt="Snap Bild" />`
     : `<span>${postData.emoji || 'ðŸ“¸'}</span>`;
@@ -174,7 +186,7 @@ function renderPost(postData) {
 
 function getLocalPosts() {
   try {
-    const raw = localStorage.getItem(LOCAL_POSTS_KEY);
+    const raw = localStorage.getItem(`${LOCAL_POSTS_KEY}:${currentUser?.id || 'guest'}`);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
@@ -185,12 +197,12 @@ function getLocalPosts() {
 function saveLocalPost(post) {
   const posts = getLocalPosts();
   posts.unshift(post);
-  localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(posts.slice(0, 100)));
+  localStorage.setItem(`${LOCAL_POSTS_KEY}:${currentUser?.id || 'guest'}`, JSON.stringify(posts.slice(0, 100)));
 }
 
 function removeLocalPost(localId) {
   const posts = getLocalPosts().filter(p => p.id !== localId);
-  localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(posts));
+  localStorage.setItem(`${LOCAL_POSTS_KEY}:${currentUser?.id || 'guest'}`, JSON.stringify(posts));
 }
 
 function loadLocalPostsIntoFeed() {
@@ -285,26 +297,22 @@ function renderDmList() {
 }
 
 async function loadOwnPostsIntoFeed() {
-  if (!currentUser) return;
+  if (!currentUser || !supabaseDB.isConnected()) return;
   const feed = document.querySelector('.feed');
   if (!feed) return;
-  loadLocalPostsIntoFeed();
-  const posts = await supabaseDB.getUserPosts(currentUser.id);
-  if (!posts.length) return;
 
-  const username = localStorage.getItem('snapgram_username') || 'du';
+  const posts = await supabaseDB.getUserPosts(currentUser.id);
   const synced = posts.map(entry => ({
     id: entry.id,
     caption: entry.caption || '',
-    emoji: entry.emoji || 'ðŸ“¸',
+    emoji: entry.emoji || '📸',
     image_url: entry.image_url || null,
-    username,
-    timeLabel: 'gerade eben'
+    username: currentUser.username,
+    timeLabel: entry.created_at ? new Date(entry.created_at).toLocaleString('de-DE') : 'gerade eben'
   }));
-  localStorage.setItem(LOCAL_POSTS_KEY, JSON.stringify(synced));
-  const existing = feed.querySelectorAll('.post[data-own-post="true"]');
-  existing.forEach(node => node.remove());
 
+  localStorage.setItem(`${LOCAL_POSTS_KEY}:${currentUser.id}`, JSON.stringify(synced));
+  feed.querySelectorAll('.post[data-own-post="true"]').forEach(node => node.remove());
   synced.slice().reverse().forEach(entry => {
     const uiPost = renderPost(entry);
     uiPost.dataset.ownPost = 'true';
@@ -350,7 +358,7 @@ async function handleDeleteAccount() {
   localStorage.removeItem('snapgram_user');
   localStorage.removeItem('snapgram_username');
   localStorage.removeItem('snapgram_name');
-  localStorage.removeItem(LOCAL_POSTS_KEY);
+  localStorage.removeItem(`${LOCAL_POSTS_KEY}:${currentUser.id}`);
   localStorage.removeItem(LOCAL_DM_KEY);
   toggleSettingsMenu(false);
   currentUser = null;
@@ -362,20 +370,29 @@ async function handleUserSearch() {
   if (!results) return;
   const query = document.getElementById('search-input')?.value?.trim() || '';
   results.innerHTML = '';
-  if (!query) return;
+  if (!query || !supabaseDB.isConnected()) return;
 
-  let users = [];
-  if (supabaseDB.isConnected()) {
-    users = await supabaseDB.searchUsers(query);
-  }
-
+  const users = await supabaseDB.searchUsers(query);
   users
-    .filter(u => u.username !== (localStorage.getItem('snapgram_username') || ''))
+    .filter(user => user.id !== currentUser?.id)
     .forEach(user => {
       const item = document.createElement('div');
       item.className = 'dm-item';
-      item.innerHTML = `<div class="dm-avatar" style="background:#E6F1FB;">${user.avatar_url || 'ðŸ™‚'}</div><div class="dm-info"><div class="dm-name">${user.username}</div><div class="dm-preview">${user.name || 'SnapGram User'}</div></div>`;
-      item.onclick = () => openChat(user.username, user.avatar_url || 'ðŸ™‚', '#E6F1FB');
+      const avatar = document.createElement('div');
+      avatar.className = 'dm-avatar';
+      avatar.style.background = '#E6F1FB';
+      avatar.textContent = user.avatar_url || '🙂';
+      const info = document.createElement('div');
+      info.className = 'dm-info';
+      const name = document.createElement('div');
+      name.className = 'dm-name';
+      name.textContent = user.username;
+      const preview = document.createElement('div');
+      preview.className = 'dm-preview';
+      preview.textContent = user.name || 'Make.It.-Nutzer';
+      info.append(name, preview);
+      item.append(avatar, info);
+      item.onclick = () => openChat(user.username, user.avatar_url || '🙂', '#E6F1FB', user.id);
       results.appendChild(item);
     });
 }
@@ -416,24 +433,22 @@ function clearAuthMessage() {
 }
 
 async function handleLogin() {
-  const username = document.getElementById('login-username').value.trim();
-  const password = document.getElementById('login-password').value.trim();
-  if (!username || !password) return showAuthMessage('Nutzername und Passwort erforderlich', true);
-  showAuthMessage('Anmelden...');
-  if (!supabaseDB.isConnected()) {
-    currentUser = { id: `demo-${username}`, username };
-    localStorage.setItem('snapgram_user', currentUser.id);
-    localStorage.setItem('snapgram_username', username);
-    showAuthMessage('Demo-Login aktiv');
-    return setTimeout(() => goTo('feed'), 250);
-  }
-  const result = await supabaseDB.signIn(username, password);
-  if (!result.success) return showAuthMessage(result.error || 'Anmeldung fehlgeschlagen', true);
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) return showAuthMessage('E-Mail-Adresse und Passwort erforderlich.', true);
+  if (!supabaseDB.isConnected()) return showAuthMessage('Supabase ist nicht erreichbar. Bitte versuche es später erneut.', true);
+
+  showAuthMessage('Anmelden …');
+  const result = await supabaseDB.signIn(email, password);
+  if (!result.success) return showAuthMessage(result.error || 'Anmeldung fehlgeschlagen.', true);
+
   currentUser = result.user;
-  localStorage.setItem('snapgram_user', result.user.id);
-  localStorage.setItem('snapgram_username', result.user.username || username);
-  showAuthMessage('Erfolgreich angemeldet');
+  localStorage.setItem('snapgram_user', currentUser.id);
+  localStorage.setItem('snapgram_username', currentUser.username);
+  localStorage.setItem('snapgram_name', currentUser.name || '');
+  showAuthMessage('Erfolgreich angemeldet.');
   setTimeout(async () => {
+    loadProfile();
     goTo('feed');
     await loadOwnPostsIntoFeed();
   }, 250);
@@ -442,27 +457,36 @@ async function handleLogin() {
 async function handleRegister() {
   const firstname = document.getElementById('register-firstname').value.trim();
   const lastname = document.getElementById('register-lastname').value.trim();
-  const username = document.getElementById('register-username').value.trim();
-  const password = document.getElementById('register-password').value.trim();
-  if (!firstname || !lastname || !username || !password) return showAuthMessage('Alle Felder erforderlich', true);
-  if (password.length < 6) return showAuthMessage('Passwort muss mindestens 6 Zeichen haben', true);
-  showAuthMessage('Registriere Konto...');
-  if (!supabaseDB.isConnected()) {
-    currentUser = { id: `demo-${username}`, username };
-    localStorage.setItem('snapgram_user', currentUser.id);
-    localStorage.setItem('snapgram_username', username);
-    localStorage.setItem('snapgram_name', `${firstname} ${lastname}`);
-    showAuthMessage('Demo-Registrierung aktiv');
-    return setTimeout(() => goTo('feed'), 250);
+  const username = document.getElementById('register-username').value.trim().toLowerCase();
+  const email = document.getElementById('register-email').value.trim();
+  const password = document.getElementById('register-password').value;
+
+  if (!firstname || !lastname || !username || !email || !password) {
+    return showAuthMessage('Bitte fülle alle Felder aus.', true);
   }
-  const result = await supabaseDB.signUp(username, password, `${firstname} ${lastname}`);
-  if (!result.success) return showAuthMessage(result.error || 'Registrierung fehlgeschlagen', true);
+  if (!/^[a-z0-9_.]{3,30}$/.test(username)) {
+    return showAuthMessage('Der Nutzername darf 3–30 Zeichen enthalten: Buchstaben, Zahlen, Punkt und Unterstrich.', true);
+  }
+  if (password.length < 6) return showAuthMessage('Das Passwort muss mindestens 6 Zeichen haben.', true);
+  if (!supabaseDB.isConnected()) return showAuthMessage('Supabase ist nicht erreichbar. Bitte versuche es später erneut.', true);
+
+  showAuthMessage('Konto wird erstellt …');
+  const result = await supabaseDB.signUp(email, password, username, `${firstname} ${lastname}`);
+  if (!result.success) return showAuthMessage(result.error || 'Registrierung fehlgeschlagen.', true);
+
+  if (result.needsEmailConfirmation) {
+    showAuthMessage('Fast fertig: Bestätige deine E-Mail über den Link, den Supabase dir sendet.');
+    document.getElementById('register-password').value = '';
+    return;
+  }
+
   currentUser = result.user;
-  localStorage.setItem('snapgram_user', result.user.id);
-  localStorage.setItem('snapgram_username', result.user.username || username);
-  localStorage.setItem('snapgram_name', `${firstname} ${lastname}`);
-  showAuthMessage('Konto erstellt');
+  localStorage.setItem('snapgram_user', currentUser.id);
+  localStorage.setItem('snapgram_username', currentUser.username);
+  localStorage.setItem('snapgram_name', currentUser.name || `${firstname} ${lastname}`);
+  showAuthMessage('Konto erstellt.');
   setTimeout(async () => {
+    loadProfile();
     goTo('feed');
     await loadOwnPostsIntoFeed();
   }, 250);
@@ -475,7 +499,8 @@ async function handleLogout() {
   localStorage.removeItem('snapgram_username');
   localStorage.removeItem('snapgram_name');
   currentUser = null;
-  document.getElementById('login-username').value = '';
+  activeChatUserId = null;
+  document.getElementById('login-email').value = '';
   document.getElementById('login-password').value = '';
   goTo('auth');
 }
@@ -488,24 +513,73 @@ function loadProfile() {
 }
 
 async function checkAuth() {
+  if (!supabaseDB.isConnected()) {
+    goTo('auth');
+    showAuthMessage('Supabase ist derzeit nicht erreichbar.', true);
+    return;
+  }
   const authUser = await supabaseDB.getCurrentUser();
-  if (authUser) {
-    currentUser = authUser;
-    localStorage.setItem('snapgram_user', authUser.id);
-    localStorage.setItem('snapgram_username', authUser.username || '');
-    goTo('feed');
-    await loadOwnPostsIntoFeed();
+  if (!authUser) {
+    localStorage.removeItem('snapgram_user');
+    localStorage.removeItem('snapgram_username');
+    localStorage.removeItem('snapgram_name');
+    currentUser = null;
+    goTo('auth');
     return;
   }
-  const userId = localStorage.getItem('snapgram_user');
-  const savedUsername = localStorage.getItem('snapgram_username');
-  if (userId && savedUsername) {
-    currentUser = { id: userId, username: savedUsername };
-    goTo('feed');
-    await loadOwnPostsIntoFeed();
-    return;
+  currentUser = authUser;
+  localStorage.setItem('snapgram_user', currentUser.id);
+  localStorage.setItem('snapgram_username', currentUser.username);
+  localStorage.setItem('snapgram_name', currentUser.name || '');
+  loadProfile();
+  goTo('feed');
+  await loadOwnPostsIntoFeed();
+}
+
+async function openChat(name, emoji, bg, userId = null) {
+  activeChatUserId = userId;
+  document.getElementById('chat-name').textContent = name;
+  const av = document.getElementById('chat-avatar');
+  av.textContent = emoji;
+  av.style.background = bg;
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML = '';
+
+  if (userId && currentUser) {
+    const result = await supabaseDB.getConversation(currentUser.id, userId);
+    if (result.success && result.messages.length) {
+      result.messages.forEach(message => {
+        const node = document.createElement('div');
+        node.className = `msg ${message.sender_id === currentUser.id ? 'me' : 'them'}`;
+        node.textContent = message.text;
+        msgs.appendChild(node);
+      });
+    } else if (result.success) {
+      msgs.appendChild(Object.assign(document.createElement('div'), { className: 'msg them', textContent: 'Chat ist bereit.' }));
+    } else {
+      msgs.appendChild(Object.assign(document.createElement('div'), { className: 'msg them', textContent: 'Nachrichten konnten nicht geladen werden.' }));
+    }
+  } else {
+    const conv = getConversations().find(item => item.username === name);
+    const messages = conv?.messages || [];
+    if (!messages.length) {
+      msgs.appendChild(Object.assign(document.createElement('div'), { className: 'msg them', textContent: 'Chat ist bereit.' }));
+    } else {
+      messages.forEach(message => {
+        const node = document.createElement('div');
+        node.className = `msg ${message.from === 'me' ? 'me' : 'them'}`;
+        node.textContent = message.text;
+        msgs.appendChild(node);
+      });
+    }
   }
-  goTo('auth');
+
+  const list = getConversations();
+  if (!list.find(item => item.username === name)) {
+    list.push({ username: name, userId, avatar: emoji || '🙂', avatarBg: bg || '#E6F1FB', messages: [], updatedAt: Date.now() });
+    saveConversations(list);
+  }
+  goTo('chat');
 }
 
 function openChat(name, emoji, bg) {
@@ -540,25 +614,48 @@ function sendMsg(event) {
   sendMsgClick();
 }
 
-function sendMsgClick() {
+async function sendMsgClick() {
   const input = document.getElementById('chat-input');
   const value = input.value.trim();
   if (!value) return;
-  const msg = document.createElement('div');
-  msg.className = 'msg me';
-  msg.textContent = value;
-  document.getElementById('chat-messages').appendChild(msg);
-  const chatName = document.getElementById('chat-name').textContent.trim();
-  if (chatName) {
+
+  if (currentUser && activeChatUserId) {
+    const result = await supabaseDB.sendMessage(currentUser.id, activeChatUserId, value);
+    if (!result.success) {
+      alert('Nachricht konnte nicht gesendet werden.');
+      return;
+    }
+    const node = document.createElement('div');
+    node.className = 'msg me';
+    node.textContent = result.message.text;
+    document.getElementById('chat-messages').appendChild(node);
     const list = getConversations();
-    let conv = list.find(x => x.username === chatName);
+    let conv = list.find(item => item.username === document.getElementById('chat-name').textContent.trim());
     if (!conv) {
-      conv = { username: chatName, avatar: 'ðŸ™‚', avatarBg: '#E6F1FB', messages: [], updatedAt: Date.now() };
+      conv = { username: document.getElementById('chat-name').textContent.trim(), userId: activeChatUserId, avatar: '🙂', avatarBg: '#E6F1FB', messages: [], updatedAt: Date.now() };
       list.push(conv);
     }
+    conv.userId = activeChatUserId;
     conv.messages.push({ from: 'me', text: value });
     conv.updatedAt = Date.now();
     saveConversations(list);
+  } else {
+    const node = document.createElement('div');
+    node.className = 'msg me';
+    node.textContent = value;
+    document.getElementById('chat-messages').appendChild(node);
+    const chatName = document.getElementById('chat-name').textContent.trim();
+    if (chatName) {
+      const list = getConversations();
+      let conv = list.find(item => item.username === chatName);
+      if (!conv) {
+        conv = { username: chatName, avatar: '🙂', avatarBg: '#E6F1FB', messages: [], updatedAt: Date.now() };
+        list.push(conv);
+      }
+      conv.messages.push({ from: 'me', text: value });
+      conv.updatedAt = Date.now();
+      saveConversations(list);
+    }
   }
   input.value = '';
 }
